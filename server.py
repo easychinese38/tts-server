@@ -1,7 +1,6 @@
 from flask import Flask, request, send_file
 import edge_tts
 import asyncio
-from pydub import AudioSegment
 import os
 
 app = Flask(__name__)
@@ -12,19 +11,24 @@ voice_map = {
 }
 
 async def generate_audio(dialogue):
-    combined = AudioSegment.empty()
+    output_file = "output.mp3"
+
+    # 先清空檔案
+    with open(output_file, "wb") as f:
+        pass
 
     for i, (speaker, text) in enumerate(dialogue):
-        filename = f"part_{i}.mp3"
         voice = voice_map.get(speaker, "zh-TW-YunJheNeural")
+        temp_file = f"part_{i}.mp3"
 
         tts = edge_tts.Communicate(text=text, voice=voice)
-        await tts.save(filename)
+        await tts.save(temp_file)
 
-        seg = AudioSegment.from_mp3(filename)
-        combined += seg + AudioSegment.silent(duration=500)
+        # 直接串接（不用 pydub）
+        with open(output_file, "ab") as outfile, open(temp_file, "rb") as infile:
+            outfile.write(infile.read())
 
-    combined.export("output.mp3", format="mp3")
+    return output_file
 
 @app.route("/tts", methods=["POST"])
 def tts():
@@ -36,9 +40,9 @@ def tts():
         speaker, text = line.split("：")
         dialogue.append((speaker, text))
 
-    asyncio.run(generate_audio(dialogue))
+    output = asyncio.run(generate_audio(dialogue))
 
-    return send_file("output.mp3", as_attachment=True)
+    return send_file(output, as_attachment=True)
 
 port = int(os.environ.get("PORT", 5000))
 app.run(host="0.0.0.0", port=port)
